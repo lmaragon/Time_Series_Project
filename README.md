@@ -6,6 +6,8 @@ Contributors:
 - Daniel Fields
 - Max Gershman
 - Luis Aragon
+
+
 Data comes from the Federal Reserve Economic Data(FRED) Bank of St.Louis.
 
 
