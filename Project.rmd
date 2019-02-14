@@ -1,0 +1,35 @@
+---
+title: "Time Series Project"
+author: "Daniel Fields & Max Gershman & Luis Aragon"
+date: "2/13/2019"
+output: html_document
+---
+
+Mild Arabica Coffee Price, per month in cents/lb.
+```{r}
+library(tseries)
+library(tidyverse)
+```
+
+```{r}
+coffee.ts <- read.csv("coffee.csv", header = TRUE)
+head(coffee.ts)
+
+coffee.ts <- coffee.ts%>%
+  mutate(Date = as.Date(DATE, format = "%m/%d/%y"))%>% #Turn date from factor into Date type
+  mutate(DATE = NULL)%>% #Drop factor date column
+  mutate(price = PCOFFOTMUSDM/100)%>% #convert cents/lb to dollars/lb
+  mutate(PCOFFOTMUSDM = NULL) #drop cents/lb column
+
+head(coffee.ts)
+```
+
+```{r}
+ggplot(coffee.ts,aes(x = Date, y = price))+
+  geom_line()+
+  ggtitle(coffee.ts$Date[max(coffee.ts$price)])
+```
+
+```{r}
+plot(coffee.ts[2],coffee.ts[1])
+```
