@@ -5,31 +5,152 @@ date: "2/13/2019"
 output: html_document
 ---
 
-Mild Arabica Coffee Price, per month in cents/lb.
+**Monthly Retail Sales: Beer, Wine, and Liquor Stores** 
+
+- Units:  Millions of Dollars, Not Seasonally Adjusted
+- Frequency:  Monthly
+
+_*Suggested Citation:*_
+
+*U.S. Bureau of the Census, Retail Sales: Food and Beverage Stores [MRTSSM445USN], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/MRTSSM445USN, February 16, 2019.*
+
+```{r}
+#For
+install.packages("tseries",repos = "https://cloud.r-project.org/") 
+#For
+install.packages("tidyverse",repos = "https://cloud.r-project.org/")
+#For
+install.packages("forecast",repos = "https://cloud.r-project.org/")
+#For
+install.packages("plotrix", repos = "https://cloud.r-project.org/")
+#For
+install.packages("astsa",repos = "https://cloud.r-project.org/" )
+#For 
+install.packages("MASS",repos = "https://cloud.r-project.org/" )
+#For
+install.packages("TSA",repos = "https://cloud.r-project.org/" )
+#For
+install.packages("GeneCycle",repos = "https://cloud.r-project.org/" )
+#For
+install.packages("zoo",repos = "https://cloud.r-project.org/")
+install.packages("xts",repos = "https://cloud.r-project.org/")
+#For Leven Test on Homoskedacity
+install.packages("car")
+```
+
 ```{r}
 library(tseries)
 library(tidyverse)
+library(forecast)
+library(plotrix)
+library(MASS)
+library(astsa)
+library(GeneCycle)
+library(TSA)
+library(car)
 ```
 
 ```{r}
-coffee.ts <- read.csv("coffee.csv", header = TRUE)
-head(coffee.ts)
+booze <- read.csv("booze.csv", header = TRUE)
+str(booze)
+head(booze)
+
+#Convert Data to time series
+booze <- ts(booze[,2],frequency = 12) #Monthly data points
+```
+
+```{r}
+#Plot raw time series
+ts.plot(booze, main = "Monthly Retail Sales: Beer, Wine, and Liquor Stores" )
+
+time <- 1:length(booze)
+lin.model <- lm(booze ~ time)
+
+predicted <- predict(lin.model)
+residuals <- residuals(lin.model)
+xy <- data.frame(time,booze,predicted,residuals)
+
+ggplot(xy, aes(x = time, y = booze)) +
+  geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+  geom_segment(aes(x = time,y = booze,xend = time, yend = predicted), alpha = .5) +
+  geom_point(aes(x = time, y = booze, fill = "Actual"), size = 0.4)+
+  ggtitle("Linear Model Intuition for Slight Heteroskedacity")
+
+qqnorm(residuals, pch = 1, frame = FALSE)
+qqline(residuals, col = "steelblue", lwd = 2)
+```
+We suspect this time series may be heteroskedastic so to test this employ a Levene Test. Per R Documentation, the Levene Test is a Bayesian form of Levene's test. Levene's test is used to assess the probability of the equality of residual variances in different groups. 
+So then, we observe a small degree of heteroskedacity. To fix this, we will apply a Box-Cox transform to the data. A Box-Cox transform, where we apply a transform to the series based on $\lambda$ to the original data $U_t$.
+$$f_{\lambda}(U_t) = \begin{array}{cc}
+  \{ & 
+    \begin{array}{cc}
+      ln(U_t) & \lambda = 0 \\
+      \lambda^{-1}(U_t^{\lambda} - 1) &  \\
+    \end{array}
+\end{array} $$
+```{r}
+#Do Box-Cox
+transforms <- boxcox(booze~c(1:length(booze)))
+which_transform <- data.frame(transforms)%>%
+  filter(y == max(y))
+
+which_transform <- which_transform$x
+```
+
+After doing this, we get that a Box-Cox transform according to the best value $\lambda_{B}=$ `r which_transform` will work best. Now we will apply the box cox to the transform to the data. Since our best value for $\lambda_B$ was slightly less than 1, then our transformation will be $\frac{(U_t^{\lambda_B} - 1)}{\lambda_B}$, where $U_t$ is the booze time series data.
+```{r}
+BoxCox <- function(data, lambda){
+  data_transformed <- (data^lambda - 1)/lambda
+  return(data_transformed)
+}
+#Transform the time series
+booze2 <- BoxCox(booze, which_transform)
+
+#Examine the effects
+ts.plot(booze2, main = "Monthly Retail Sales: Beer, Wine, and Liquor Stores After Box-Cox Transform" )
+
+time <- 1:length(booze2)
+lin.model2 <- lm(booze2 ~ time)
+
+predicted2 <- predict(lin.model2)
+residuals2 <- residuals(lin.model2)
+xy2 <- data.frame(time,booze2,predicted2,residuals2)
+
+ggplot(xy, aes(x = time, y = booze2)) +
+  geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+  geom_segment(aes(x = time,y = booze2,xend = time, yend = predicted2), alpha = .5) +
+  geom_point(aes(x = time, y = booze2, fill = "Actual"), size = 0.4)+
+  ggtitle("Linear Model After Box-Cox")
+```
+
+```{r}
+decomposed_model <- decompose(booze, type =  "additive")
+
+autoplot(decomposed_model, main = "Additive Decomposition Plot")+
+  xlab("Time in Months")
+#Examine the data for seasonality
+seasonplot(booze, 12, col = rainbow(12),year.labels = TRUE, main = "Annual Seasonality Plot")
+```
+Variance Does *NOT* look stable. 
+
+First fix, will be to subtract each value by the mean.
+```{r}
+mu <- mean(coffee.ts$price)
 
 coffee.ts <- coffee.ts%>%
-  mutate(Date = as.Date(DATE, format = "%m/%d/%y"))%>% #Turn date from factor into Date type
-  mutate(DATE = NULL)%>% #Drop factor date column
-  mutate(price = PCOFFOTMUSDM/100)%>% #convert cents/lb to dollars/lb
-  mutate(PCOFFOTMUSDM = NULL) #drop cents/lb column
+  mutate(price = price - mu)
 
-head(coffee.ts)
+
+```
+
+
+```{r}
+plot(polyroot(c(1, -5/2,2,-1/2)), xlim = c(-2,2), ylim = c(-2,2), pch = 19, col = "blue")
+draw.circle(0,0,1)
+abline(v = 0)
+abline(h = 0)
 ```
 
 ```{r}
-ggplot(coffee.ts,aes(x = Date, y = price))+
-  geom_line()+
-  ggtitle(coffee.ts$Date[max(coffee.ts$price)])
-```
 
-```{r}
-plot(coffee.ts[2],coffee.ts[1])
 ```
